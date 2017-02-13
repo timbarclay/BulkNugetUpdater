@@ -16,16 +16,18 @@ const string PackageId = "KingInTheNorth";
 // The location of the solution you want to update
 const string SolutionPath = @"C:\git\sevenKingdoms\north.sln";
 
+// Optional. The specific version of the package, e.g "1.0.0.6" or "0.0.0.216-bugfix".
+const string Version = @"";
+
 void Main()
 {
 	var start = DateTime.Now;
-	
-	var repo = PackageRepositoryFactory.Default.CreateRepository(NugetRepo);
-	var latestPackage = repo.FindPackagesById(PackageId).OrderByDescending(x => x.Version).First();
 
-	var packageVersion = latestPackage.Version.ToFullString();
+	var repo = PackageRepositoryFactory.Default.CreateRepository(NugetRepo);
+	var updatePackage = string.IsNullOrWhiteSpace(Version) ? GetLatestPackage(repo) : GetVersionOfPackage(repo, Version);
+	var packageVersion = updatePackage.Version.ToFullString();
 	
-	var assemblies = latestPackage.AssemblyReferences.Cast<PhysicalPackageAssemblyReference>().ToList();
+	var assemblies = updatePackage.AssemblyReferences.Cast<PhysicalPackageAssemblyReference>().ToList();
 	var assemblyVersions = assemblies.Select(a =>
 	{
 		var sourcePath = a.SourcePath;
@@ -50,6 +52,19 @@ void Main()
 	var end = DateTime.Now;
 	var taken = end.Subtract(start).TotalSeconds;
 	Console.WriteLine($"Finished updating in {taken} seconds.");
+}
+
+public IPackage GetLatestPackage(IPackageRepository repo)
+{
+	// This regex makes sure we only get the latest master branch build, even though a feature branch build could be more recent
+	var masterPattern = @"(?:\d+\.)+\d+$";
+	var masterRegex = new Regex(masterPattern);
+	return repo.FindPackagesById(PackageId).OrderByDescending(x => x.Version).First(x => masterRegex.IsMatch(x.Version.ToString()));
+}
+
+public IPackage GetVersionOfPackage(IPackageRepository repo, string version) 
+{
+	return repo.FindPackagesById(PackageId).Single(x => string.Equals(x.Version.ToFullString(), version, StringComparison.CurrentCultureIgnoreCase));
 }
 
 public void UpdatePackageVersionInConfigs(string directoryPath, string packageName, string newVersion)
@@ -80,7 +95,7 @@ public void UpdateVersionsInProjFiles(string directoryPath, string packageName, 
 
 			var assemblyPattern = $@"{name}, Version=(?:\d+\.)+\d+";
 			var assemblyReplacement = $@"{name}, Version={version}";
-			
+
 			FindAndReplace(file, assemblyPattern, assemblyReplacement);
 		}
 	}
@@ -91,7 +106,7 @@ public void FindAndReplace(string file, string findPattern, string replacement)
 	var regex = new Regex(findPattern);
 	var fileText = File.ReadAllText(file);
 	var matches = regex.Matches(fileText);
-	if (matches.Count == 0) 
+	if (matches.Count == 0)
 	{
 		return;
 	}
@@ -104,9 +119,9 @@ public void FindAndReplace(string file, string findPattern, string replacement)
 	}
 
 	Console.Write($"Updating {file}: changing {currentVersion} to {replacement}... ");
-	
+
 	var newText = Regex.Replace(fileText, findPattern, replacement);
 	File.WriteAllText(file, newText, Encoding.UTF8);
-	
+
 	Console.WriteLine("Done");
 }
